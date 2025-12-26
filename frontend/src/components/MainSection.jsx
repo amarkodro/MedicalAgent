@@ -11,7 +11,9 @@ function MainSection() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState(null);
+  const [feedbackSent, setFeedbackSent] = useState(false);
 
+  // auto-hide alert
   useEffect(() => {
     if (message) {
       const timer = setTimeout(() => setMessage(null), 3000);
@@ -22,8 +24,19 @@ function MainSection() {
   async function handleSubmit(e) {
     e.preventDefault();
     setLoading(true);
+    setMessage({
+      type: "info",
+      text: "Analiza je pokrenuta. Agent obrađuje medicinski slučaj...",
+    });
     setError("");
     setResult(null);
+    setFeedbackSent(false);
+
+    if (!symptoms.trim()) {
+      setMessage({ type: "danger", text: "Unesite barem jedan simptom." });
+      setLoading(false);
+      return;
+    }
 
     try {
       const data = await createCase({
@@ -32,10 +45,8 @@ function MainSection() {
         symptoms,
       });
 
-      console.log("Response from backend:", data);
-
       setCaseId(data.case_id);
-    } catch (err) {
+    } catch {
       setError("Greška pri slanju podataka backendu.");
     } finally {
       setLoading(false);
@@ -44,7 +55,7 @@ function MainSection() {
 
   const fetchResult = async () => {
     if (!caseId) {
-      alert("Prvo analiziraj simptome.");
+      setMessage({ type: "danger", text: "Prvo analiziraj simptome." });
       return;
     }
 
@@ -52,29 +63,27 @@ function MainSection() {
       const res = await fetch(`http://127.0.0.1:8000/cases/${caseId}`);
       const data = await res.json();
 
-      console.log("CASE STATUS:", data);
-
       if (data.status === "DIAGNOSED") {
         setResult(data.prediction);
       } else {
-        alert("Agent još obrađuje slučaj...");
+        setMessage({ type: "info", text: "Agent još obrađuje slučaj..." });
       }
-    } catch (err) {
-      console.error("Greška pri dohvaćanju rezultata", err);
+    } catch {
+      setMessage({ type: "danger", text: "Greška pri dohvaćanju rezultata." });
     }
   };
 
   async function sendFeedback(accepted) {
+    setFeedbackSent(true);
+
     try {
       await fetch("http://127.0.0.1:8000/feedback", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           case_id: caseId,
           prediction_id: 1,
-          accepted: accepted,
+          accepted,
         }),
       });
 
@@ -86,27 +95,25 @@ function MainSection() {
             }
           : {
               type: "success",
-              text: "Hvala! Slučaj je odbijen.",
+              text: "Slučaj je odbijen! Hvala što ste potvrdili.",
             }
       );
-    } catch (err) {
-      setMessage({
-        type: "danger",
-        text: "Greška pri slanju feedbacka.",
-      });
+      setTimeout(() => {
+        resetForm();
+      }, 3000);
+    } catch {
+      setMessage({ type: "danger", text: "Greška pri slanju feedbacka." });
     }
   }
 
-  const handleFeedback = (accepted) => {
-    setMessage(
-      accepted
-        ? {
-            type: "success",
-            text: "Slučaj je prihvaćen! Hvala što ste potvrdili.",
-          }
-        : { type: "error", text: "Hvala! Slučaj je odbijen." }
-    );
-  };
+  function resetForm() {
+    setAge("");
+    setGender("");
+    setSymptoms("");
+    setCaseId(null);
+    setResult(null);
+    setFeedbackSent(false);
+  }
 
   return (
     <section className="w-full max-w-2xl mx-auto relative">
@@ -117,17 +124,24 @@ function MainSection() {
             className={`p-4 rounded-lg text-sm shadow-lg border ${
               message.type === "success"
                 ? "bg-green-900/90 text-green-200 border-green-700"
+                : message.type === "info"
+                ? "bg-blue-900/90 text-blue-200 border-blue-700"
                 : "bg-red-900/90 text-red-200 border-red-700"
             }`}
           >
             <span className="font-semibold">
-              {message.type === "success" ? "Success!" : "Success!"}
+              {message.type === "success"
+                ? "Success!"
+                : message.type === "info"
+                ? "Info"
+                : "Greška!"}
             </span>{" "}
             {message.text}
           </div>
         </div>
       )}
 
+      {/* FORM */}
       <form
         onSubmit={handleSubmit}
         className="bg-gray-800/50 p-8 rounded-xl border border-gray-700 space-y-6"
@@ -136,23 +150,64 @@ function MainSection() {
           📝 Unos medicinskog slučaja
         </h2>
 
+        {loading && (
+          <div className="flex items-center justify-center gap-3 text-blue-300 text-sm">
+            <svg
+              className="animate-spin h-5 w-5 text-blue-400"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              />
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+              />
+            </svg>
+
+            <span>Analiza u toku…</span>
+          </div>
+        )}
+
         <input
           type="number"
           placeholder="Starost pacijenta"
           value={age}
           onChange={(e) => setAge(e.target.value)}
           required
-          className="w-full rounded-md px-3 py-2"
+          className="w-full rounded-md px-3 py-2
+             bg-gray-900/80 border border-gray-700
+             text-white placeholder-gray-400
+             focus:outline-none focus:ring-2 focus:ring-indigo-500/50
+             focus:border-indigo-500 transition"
         />
 
-        <input
-          type="text"
-          placeholder="Spol (Muško / Žensko)"
+        <select
           value={gender}
           onChange={(e) => setGender(e.target.value)}
           required
-          className="w-full rounded-md px-3 py-2"
-        />
+          className="w-full rounded-md px-3 py-2 pr-10
+             bg-gray-900/80 border border-gray-700
+             text-white
+             focus:outline-none focus:ring-2 focus:ring-indigo-500/50
+             focus:border-indigo-500 transition
+             appearance-none"
+        >
+          <option value="" disabled>
+            Odaberite spol
+          </option>
+          <option value="Muško">Muško</option>
+          <option value="Žensko">Žensko</option>
+          <option value="Drugo">Drugo</option>
+        </select>
 
         <textarea
           placeholder="Simptomi (npr. glavobolja, mučnina, temperatura)"
@@ -160,13 +215,17 @@ function MainSection() {
           onChange={(e) => setSymptoms(e.target.value)}
           required
           rows={4}
-          className="w-full rounded-md px-3 py-2"
+          className="w-full rounded-md px-3 py-2
+             bg-gray-900/80 border border-gray-700
+             text-white placeholder-gray-400
+             focus:outline-none focus:ring-2 focus:ring-indigo-500/50
+             focus:border-indigo-500 transition"
         />
 
         <button
           type="submit"
           disabled={loading}
-          className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-md font-semibold transition disabled:opacity-50"
+          className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-md font-semibold disabled:opacity-50"
         >
           {loading ? "AI analizira..." : "Analiziraj simptome"}
         </button>
@@ -195,7 +254,7 @@ function MainSection() {
           <p className="text-gray-300 mt-2">
             <b>Confidence:</b>{" "}
             <span className="text-white">
-              {`${Math.round(result.confidence * 100)}%`}
+              {Math.round(result.confidence * 100)}%
             </span>
           </p>
 
@@ -217,15 +276,17 @@ function MainSection() {
         <div className="mt-6 space-y-4">
           <div className="flex gap-4">
             <button
+              disabled={feedbackSent}
               onClick={() => sendFeedback(true)}
-              className="flex-1 bg-green-600 hover:bg-green-500 text-white py-2 rounded-md font-semibold"
+              className="flex-1 bg-green-600 hover:bg-green-500 text-white py-2 rounded-md font-semibold disabled:opacity-50"
             >
               ✅ Prihvati
             </button>
 
             <button
+              disabled={feedbackSent}
               onClick={() => sendFeedback(false)}
-              className="flex-1 bg-red-600 hover:bg-red-500 text-white py-2 rounded-md font-semibold"
+              className="flex-1 bg-red-600 hover:bg-red-500 text-white py-2 rounded-md font-semibold disabled:opacity-50"
             >
               ❌ Odbaci
             </button>

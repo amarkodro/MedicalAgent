@@ -1,0 +1,33 @@
+Uputstvo za pokretanje aplikacije
+
+Za pokretanje sistema potrebno je otvoriti tri terminala u Visual Studio Code-u.
+
+Terminal 1 – Pokretanje AI agenta
+U prvom terminalu potrebno je pozicionirati se u backend direktorij i pokrenuti AI agenta:
+
+cd ./backend/
+python agent_loop.py
+
+Nakon pokretanja, agent radi u pozadini i kroz tick/step logiku obrađuje medicinske slučajeve.
+
+Terminal 2 – Pokretanje backend API-ja (Swagger)
+U drugom terminalu potrebno je također pozicionirati se u backend direktorij i pokrenuti FastAPI aplikaciju:
+
+cd ./backend/
+python -m uvicorn web.api:app --reload
+
+Swagger dokumentacija i backend API dostupni su na adresi:
+http://127.0.0.1:8000/docs
+
+Terminal 3 – Pokretanje frontend aplikacije
+U trećem terminalu potrebno je pozicionirati se u frontend direktorij i pokrenuti frontend aplikaciju:
+
+cd ./frontend/
+npm run dev
+
+Frontend aplikacija dostupna je na adresi:
+http://localhost:5173
+
+Napomena
+AI agent, backend API i frontend aplikacija rade kao odvojeni procesi.
+AI agent se izvršava asinhrono u pozadini, backend služi kao transportni sloj, dok frontend omogućava unos medicinskih slučajeva, pregled rezultata i slanje feedbacka agentu.

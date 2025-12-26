@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { createCase } from "../api/cases";
 
 function MainSection() {
@@ -10,6 +10,14 @@ function MainSection() {
   const [caseId, setCaseId] = useState(null);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
+  const [message, setMessage] = useState(null);
+
+  useEffect(() => {
+    if (message) {
+      const timer = setTimeout(() => setMessage(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [message]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -26,7 +34,7 @@ function MainSection() {
 
       console.log("Response from backend:", data);
 
-      setCaseId(data.case_id); // 🔑 KLJUČNO
+      setCaseId(data.case_id);
     } catch (err) {
       setError("Greška pri slanju podataka backendu.");
     } finally {
@@ -65,42 +73,61 @@ function MainSection() {
         },
         body: JSON.stringify({
           case_id: caseId,
-          prediction_id: 1, // za sada statički (OK za projekat)
+          prediction_id: 1,
           accepted: accepted,
         }),
       });
 
-      alert(
-        accepted ? "Hvala! Slučaj je prihvaćen." : "Hvala! Slučaj je odbijen."
+      setMessage(
+        accepted
+          ? {
+              type: "success",
+              text: "Slučaj je prihvaćen! Hvala što ste potvrdili.",
+            }
+          : {
+              type: "success",
+              text: "Hvala! Slučaj je odbijen.",
+            }
       );
     } catch (err) {
-      alert("Greška pri slanju feedbacka.");
-    }
-  }
-  async function sendFeedback(accepted) {
-    try {
-      await fetch("http://127.0.0.1:8000/feedback", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          case_id: caseId,
-          prediction_id: 1, // za sada statički (OK za projekat)
-          accepted: accepted,
-        }),
+      setMessage({
+        type: "danger",
+        text: "Greška pri slanju feedbacka.",
       });
-
-      alert(
-        accepted ? "Hvala! Slučaj je prihvaćen." : "Hvala! Slučaj je odbijen."
-      );
-    } catch (err) {
-      alert("Greška pri slanju feedbacka.");
     }
   }
+
+  const handleFeedback = (accepted) => {
+    setMessage(
+      accepted
+        ? {
+            type: "success",
+            text: "Slučaj je prihvaćen! Hvala što ste potvrdili.",
+          }
+        : { type: "error", text: "Hvala! Slučaj je odbijen." }
+    );
+  };
 
   return (
-    <section className="w-full max-w-2xl mx-auto">
+    <section className="w-full max-w-2xl mx-auto relative">
+      {message && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 w-[90%] max-w-xl">
+          <div
+            role="alert"
+            className={`p-4 rounded-lg text-sm shadow-lg border ${
+              message.type === "success"
+                ? "bg-green-900/90 text-green-200 border-green-700"
+                : "bg-red-900/90 text-red-200 border-red-700"
+            }`}
+          >
+            <span className="font-semibold">
+              {message.type === "success" ? "Success!" : "Success!"}
+            </span>{" "}
+            {message.text}
+          </div>
+        </div>
+      )}
+
       <form
         onSubmit={handleSubmit}
         className="bg-gray-800/50 p-8 rounded-xl border border-gray-700 space-y-6"

@@ -52,7 +52,8 @@ class DatasetClassifier:
 
         base_confidence = min(base_confidence, 1.0)
 
-        base_confidence = base_confidence * (0.5 + trust)
-        base_confidence = min(base_confidence, 1.0)
+        adjustment = (trust - 0.5) * 2   # [-1, +1]
+        base_confidence += adjustment * 0.3
+        base_confidence = max(0.0, min(base_confidence, 1.0))
 
         return base_disease, base_confidence

@@ -10,7 +10,12 @@ from application.services.dataset_classifier import DatasetClassifier
 
 
 # ---------------- DATASET CLASSIFIER ----------------
-classifier = DatasetClassifier("data/Medicina_Dataset.csv")
+learning_service = LearningService()
+
+classifier = DatasetClassifier(
+    "data/Medicina_Dataset.csv",
+    learning_service
+)
 
 
 

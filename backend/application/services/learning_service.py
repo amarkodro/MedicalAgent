@@ -1,11 +1,7 @@
 from domain.entities import Feedback
 from domain.enums import FeedbackResult
 from datetime import datetime, timezone
-from storage.db import feedback_stats_for_symptoms
-
-
-
-
+from storage.db import feedback_stats_for_symptoms, feedback_stats_for_symptoms_and_disease
 
 
 class LearningService:
@@ -66,3 +62,15 @@ class LearningService:
     def reset(self):
         self.accepted = 0
         self.rejected = 0
+
+    def is_disease_rejected_for_symptoms(
+        self,
+        symptoms: str,
+        disease: str,
+        min_rejections: int = 2
+    ) -> bool:
+        accepted, rejected = feedback_stats_for_symptoms_and_disease(
+            symptoms, disease
+        )
+
+        return rejected >= min_rejections and rejected > accepted    

@@ -223,3 +223,25 @@ def feedback_stats_for_symptoms(symptoms: str):
     return accepted, rejected
 
 
+def feedback_stats_for_symptoms_and_disease(symptoms: str, disease: str):
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT
+            SUM(CASE WHEN f.accepted = 1 THEN 1 ELSE 0 END),
+            SUM(CASE WHEN f.accepted = 0 THEN 1 ELSE 0 END)
+        FROM feedback f
+        JOIN medical_cases c ON c.id = f.case_id
+        WHERE LOWER(c.symptoms) = LOWER(?)
+          AND LOWER(c.predicted_disease) = LOWER(?)
+    """, (symptoms, disease))
+
+    row = cursor.fetchone()
+    conn.close()
+
+    accepted = row[0] or 0
+    rejected = row[1] or 0
+    return accepted, rejected
+
+

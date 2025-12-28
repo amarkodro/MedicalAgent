@@ -1,6 +1,8 @@
 import csv
 from collections import Counter
 from domain.entities import MedicalCase
+from application.services.learning_service import LearningService
+
 
 
 
@@ -8,11 +10,12 @@ from domain.entities import MedicalCase
 class DatasetClassifier:
     """
     Jednostavan data-driven classifier baziran na CSV-u.
-    Ne koristi ML – koristi statistiku iz dataseta.
+    Uči kroz feedback (bez ML-a).
     """
 
-    def __init__(self, csv_path: str):
+    def __init__(self, csv_path: str, learning_service: LearningService):
         self.symptom_map = {}
+        self.learning_service = learning_service
         self._load(csv_path)
 
     def _load(self, path: str):
@@ -31,29 +34,36 @@ class DatasetClassifier:
             s.strip() for s in case.symptoms.lower().split(",")
         )
 
-        best_match = None
-        best_score = 0.0
+        candidates = []
 
+        # -------- SENSE + THINK --------
         for dataset_symptoms, diseases in self.symptom_map.items():
             dataset_set = set(s.strip() for s in dataset_symptoms.split(","))
             overlap = case_symptoms_set & dataset_set
             score = len(overlap) / len(dataset_set)
 
-            if score > best_score:
-                best_score = score
-                best_match = Counter(diseases).most_common(1)[0][0]
+            if score > 0:
+                disease = Counter(diseases).most_common(1)[0][0]
 
-        if best_match is None:
-            base_confidence = 0.2
+                # -------- LEARN FILTER --------
+                if self.learning_service.is_disease_rejected_for_symptoms(
+                    case.symptoms, disease
+                ):
+                    continue  # preskoči lošu bolest
+
+                candidates.append((disease, score))
+
+        # -------- ACT --------
+        if not candidates:
             base_disease = "Unknown"
+            base_confidence = 0.2
         else:
-            base_confidence = best_score
-            base_disease = best_match
+            base_disease, base_confidence = max(
+                candidates, key=lambda x: x[1]
+            )
 
+        # trust utiče na confidence
+        base_confidence = base_confidence * (0.5 + trust)
         base_confidence = min(base_confidence, 1.0)
-
-        adjustment = (trust - 0.5) * 2   # [-1, +1]
-        base_confidence += adjustment * 0.3
-        base_confidence = max(0.0, min(base_confidence, 1.0))
 
         return base_disease, base_confidence

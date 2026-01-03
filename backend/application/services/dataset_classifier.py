@@ -53,7 +53,6 @@ class DatasetClassifier:
 
         disease_score = Counter()
 
-        # 1) boduj bolesti preko svakog simptoma
         for symptom in input_symptoms:
             for disease, freq in self.symptom_to_diseases.get(symptom, {}).items():
                 if self.learning_service.is_disease_rejected_for_symptoms(case.symptoms, disease):
@@ -63,28 +62,24 @@ class DatasetClassifier:
         if not disease_score:
             return [("Unknown", 0.2)]
 
-        # 2) normalizacija: koliko je jako u odnosu na broj unesenih simptoma
-        # max_score ≈ kada se bolest pojavljuje u svim simptomima često
         max_score = max(disease_score.values())
 
         results = []
         for disease, score in disease_score.items():
-            # core confidence (0-1): relativno prema najboljoj bolesti
+        
             base_conf = score / max_score
 
-            # dodatno: penalizuj ako je user unio puno simptoma a bolest "ne pokriva"
-            # (ovo sprječava lažnih 100%)
             coverage = 0
             for symptom in input_symptoms:
                 if disease in self.symptom_to_diseases.get(symptom, {}):
                     coverage += 1
             coverage_ratio = coverage / len(input_symptoms)
 
-            confidence = 0.7 * base_conf + 0.3 * coverage_ratio  # miks ranking + coverage
+            confidence = 0.7 * base_conf + 0.3 * coverage_ratio  
 
-            # trust utiče, ali ne smije pumpati do 1.0 lako
+            
             confidence = confidence * (0.6 + 0.4 * trust)
-            confidence = min(confidence, 0.95)  # cap da ne iskače 100% stalno
+            confidence = min(confidence, 0.95)  
 
             results.append((disease, confidence))
 

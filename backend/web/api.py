@@ -43,11 +43,7 @@ def create_case(dto: MedicalCaseCreateDto):
 
 @app.post("/feedback")
 def submit_feedback(dto: FeedbackCreateDto):
-    insert_feedback(
-        case_id=dto.case_id,
-        disease=dto.disease,
-        accepted=dto.accepted
-    )
+    insert_feedback(dto.case_id, dto.disease, dto.accepted)
     return {"status": "feedback received"}
 
 

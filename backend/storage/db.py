@@ -47,13 +47,14 @@ def init_db():
     _ensure_column(cursor, "medical_cases", "decision", "TEXT")
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS feedback (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            case_id INTEGER NOT NULL,
-            disease TEXT NOT NULL,
-            accepted INTEGER NOT NULL,
-            created_at TEXT NOT NULL
-        )
+    CREATE TABLE IF NOT EXISTS feedback (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        case_id INTEGER NOT NULL,
+        disease TEXT NOT NULL,
+        symptoms TEXT NOT NULL,
+        accepted INTEGER NOT NULL,
+        created_at TEXT NOT NULL
+    )
     """)
 
     _ensure_column(cursor, "feedback", "disease", "TEXT")
@@ -181,18 +182,28 @@ def insert_feedback(case_id: int, disease: str, accepted: bool):
     conn = get_connection()
     cursor = conn.cursor()
 
+    cursor.execute("SELECT symptoms FROM medical_cases WHERE id = ?", (case_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        raise ValueError("Case not found")
+
+    normalized_symptoms = normalize_symptoms(row[0])
+
     cursor.execute("""
-        INSERT INTO feedback (case_id, disease, accepted, created_at)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO feedback (case_id, disease, symptoms, accepted, created_at)
+        VALUES (?, ?, ?, ?, ?)
     """, (
         case_id,
-        disease,
+        disease.strip(),
+        normalized_symptoms,
         int(accepted),
         datetime.now(timezone.utc).isoformat()
     ))
 
     conn.commit()
     conn.close()
+
 
 
 def count_feedback():
@@ -239,15 +250,16 @@ def feedback_stats_for_symptoms_and_disease(symptoms: str, disease: str):
     conn = get_connection()
     cursor = conn.cursor()
 
+    normalized_symptoms = normalize_symptoms(symptoms)
+
     cursor.execute("""
         SELECT
-            SUM(CASE WHEN f.accepted = 1 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN f.accepted = 0 THEN 1 ELSE 0 END)
-        FROM feedback f
-        JOIN medical_cases c ON c.id = f.case_id
-        WHERE LOWER(c.symptoms) = LOWER(?)
-          AND LOWER(f.disease) = LOWER(?)
-    """, (symptoms, disease))
+            SUM(CASE WHEN accepted = 1 THEN 1 ELSE 0 END),
+            SUM(CASE WHEN accepted = 0 THEN 1 ELSE 0 END)
+        FROM feedback
+        WHERE symptoms = ?
+          AND LOWER(disease) = LOWER(?)
+    """, (normalized_symptoms, disease))
 
     row = cursor.fetchone()
     conn.close()
@@ -255,3 +267,4 @@ def feedback_stats_for_symptoms_and_disease(symptoms: str, disease: str):
     accepted = row[0] or 0
     rejected = row[1] or 0
     return accepted, rejected
+

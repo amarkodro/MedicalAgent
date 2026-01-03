@@ -94,7 +94,7 @@ function MainSection() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           case_id: caseId,
-          disease: selected.disease, // ✅ šalješ baš odabranu bolest
+          disease: selected.disease,
           accepted,
         }),
       });

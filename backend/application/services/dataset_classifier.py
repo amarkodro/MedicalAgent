@@ -1,5 +1,5 @@
 import csv
-from collections import Counter
+from collections import Counter, defaultdict
 from typing import List, Tuple
 
 from domain.entities import MedicalCase
@@ -12,23 +12,29 @@ class DatasetClassifier:
     Uses symptom overlap scoring + feedback filter.
     """
 
-    def __init__(self, csv_path: str, learning_service: LearningService):
-        self.symptom_map = {}  # symptoms_string -> [disease,...]
+
+class DatasetClassifier:
+    def __init__(self, csv_path: str, learning_service):
         self.learning_service = learning_service
+        self.symptom_to_diseases = defaultdict(Counter)  # symptom -> Counter(disease -> freq)
         self._load(csv_path)
 
     def _load(self, path: str):
         with open(path, newline="", encoding="utf-8") as f:
             reader = csv.DictReader(f)
-            for row in reader:
-                symptoms = row["Simptomi"].lower().strip()
-                disease = row["Bolest"].strip()
 
-                if not symptoms or not disease:
+            for row in reader:
+                symptoms_raw = row.get("Simptomi", "").lower().strip()
+                disease = row.get("Bolest", "").strip()
+
+                if not symptoms_raw or not disease:
                     continue
 
-                self.symptom_map.setdefault(symptoms, [])
-                self.symptom_map[symptoms].append(disease)
+                symptoms_list = [s.strip() for s in symptoms_raw.split(",") if s.strip()]
+                for symptom in symptoms_list:
+                    self.symptom_to_diseases[symptom][disease] += 1
+
+
 
     @staticmethod
     def _split_set(symptoms: str) -> set:
@@ -40,49 +46,49 @@ class DatasetClassifier:
             return "Unknown", 0.2
         return results[0]
 
-    def predict_top_k(
-        self,
-        case: MedicalCase,
-        trust: float,
-        k: int = 5
-    ) -> List[Tuple[str, float]]:
-        """Return up to K diseases with confidence."""
-
-        case_set = self._split_set(case.symptoms)
-        if not case_set:
+    def predict_top_k(self, case, trust: float, k: int = 5) -> List[Tuple[str, float]]:
+        input_symptoms = [s.strip() for s in case.symptoms.lower().split(",") if s.strip()]
+        if not input_symptoms:
             return [("Unknown", 0.2)]
 
-        disease_scores = {}  # disease -> best_score
+        disease_score = Counter()
 
-        for dataset_symptoms, diseases in self.symptom_map.items():
-            dataset_set = self._split_set(dataset_symptoms)
-            if not dataset_set:
-                continue
-
-            overlap = case_set & dataset_set
-            if not overlap:
-                continue
-
-            # Jaccard (penalizes extra symptoms on either side)
-            union = case_set | dataset_set
-            base_score = len(overlap) / len(union)
-
-            # pick most common disease for that symptom row OR spread across all in that row
-            for disease in set(diseases):
+        # 1) boduj bolesti preko svakog simptoma
+        for symptom in input_symptoms:
+            for disease, freq in self.symptom_to_diseases.get(symptom, {}).items():
                 if self.learning_service.is_disease_rejected_for_symptoms(case.symptoms, disease):
                     continue
-                prev = disease_scores.get(disease, 0.0)
-                disease_scores[disease] = max(prev, base_score)
+                disease_score[disease] += freq
 
-        if not disease_scores:
+        if not disease_score:
             return [("Unknown", 0.2)]
 
-        results: List[Tuple[str, float]] = []
-        multiplier = 0.5 + trust  # ~1.0 when trust=0.5
-        for disease, score in disease_scores.items():
-            confidence = score * multiplier
-            confidence = min(confidence, 1.0)
+        # 2) normalizacija: koliko je jako u odnosu na broj unesenih simptoma
+        # max_score ≈ kada se bolest pojavljuje u svim simptomima često
+        max_score = max(disease_score.values())
+
+        results = []
+        for disease, score in disease_score.items():
+            # core confidence (0-1): relativno prema najboljoj bolesti
+            base_conf = score / max_score
+
+            # dodatno: penalizuj ako je user unio puno simptoma a bolest "ne pokriva"
+            # (ovo sprječava lažnih 100%)
+            coverage = 0
+            for symptom in input_symptoms:
+                if disease in self.symptom_to_diseases.get(symptom, {}):
+                    coverage += 1
+            coverage_ratio = coverage / len(input_symptoms)
+
+            confidence = 0.7 * base_conf + 0.3 * coverage_ratio  # miks ranking + coverage
+
+            # trust utiče, ali ne smije pumpati do 1.0 lako
+            confidence = confidence * (0.6 + 0.4 * trust)
+            confidence = min(confidence, 0.95)  # cap da ne iskače 100% stalno
+
             results.append((disease, confidence))
 
         results.sort(key=lambda x: x[1], reverse=True)
         return results[:k]
+
+

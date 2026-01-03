@@ -334,15 +334,6 @@ function MainSection() {
               >
                 ✅ Prihvati
               </button>
-
-              <button
-                type="button"
-                disabled={!selected || feedbackSent}
-                onClick={() => sendFeedback(false)}
-                className="flex-1 bg-red-600 hover:bg-red-500 text-white py-2 rounded-md font-semibold disabled:opacity-50"
-              >
-                ❌ Odbaci
-              </button>
             </div>
 
             <p className="text-xs text-gray-400 text-center mt-3">

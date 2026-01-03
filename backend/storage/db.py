@@ -12,7 +12,9 @@ def get_connection():
 
 
 def normalize_symptoms(symptoms: str) -> str:
-    return ",".join(sorted(s.strip().lower() for s in symptoms.split(",") if s.strip()))
+    parts = [s.strip().lower() for s in symptoms.split(",") if s.strip()]
+    parts = sorted(set(parts))
+    return ", ".join(parts)
 
 
 def _ensure_column(cursor, table: str, column: str, col_def: str):

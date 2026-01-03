@@ -9,22 +9,16 @@ from application.services.db_queue_service import DbQueueService
 from application.services.dataset_classifier import DatasetClassifier
 
 
-# ---------------- DATASET CLASSIFIER ----------------
-learning_service = LearningService()
-
-classifier = DatasetClassifier(
-    "data/Medicina_Dataset.csv",
-    learning_service
-)
-
-
-
-
 def run_agent():
     init_db()
 
     queue_service = DbQueueService()
     learning_service = LearningService()
+
+    classifier = DatasetClassifier(
+        "data/Medicina_Dataset.csv",
+        learning_service
+    )
 
     scoring_service = ScoringService(
         classifier=classifier,
@@ -49,7 +43,7 @@ def run_agent():
             prediction = scoring_runner.tick()
             if prediction:
                 print(
-                    f"Decision: {prediction.decision} | "
+                    f"Decision: {prediction.decision.name} | "
                     f"Disease: {prediction.predicted_disease} | "
                     f"Confidence: {prediction.confidence:.2f}"
                 )

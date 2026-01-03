@@ -3,34 +3,22 @@ from storage.db import count_feedback
 
 
 class RetrainAgentRunner:
-    """
-    Runner koji implementira LEARN fazu agenta.
-    Odlučuje DA LI treba retrenirati model.
-    """
+    """Decides when retraining is required based on rejection rate."""
 
-    def reset(self):
-        self._retrain_triggered = False
-        
-    def __init__(
-        self,
-        learning_service: LearningService,
-        rejection_threshold: float = 0.3
-    ):
+    def __init__(self, learning_service: LearningService, rejection_threshold: float = 0.3):
         self.learning_service = learning_service
         self.rejection_threshold = rejection_threshold
         self._retrain_triggered = False
 
+    def reset(self):
+        self._retrain_triggered = False
+
     def tick(self) -> bool:
-    # -------- SENSE --------
         accepted, rejected = count_feedback()
-        self.learning_service.load_from_db(accepted, rejected)
+        total = accepted + rejected
+        rejection_rate = (rejected / total) if total > 0 else 0.0
 
-    # -------- THINK --------
-        rejection_rate = self.learning_service.rejection_rate()
-
-    # -------- ACT --------
         if rejection_rate >= self.rejection_threshold and not self._retrain_triggered:
             self._retrain_triggered = True
             return True
-
         return False

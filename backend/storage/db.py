@@ -1,23 +1,31 @@
 import sqlite3
+import json
 from datetime import datetime, timezone
+from pathlib import Path
 from domain.enums import CaseStatus
 
-DB_PATH = "storage/medical.db"
+DB_PATH = Path(__file__).resolve().parent / "medical.db"
 
 
 def get_connection():
-    return sqlite3.connect(DB_PATH, check_same_thread=False)
+    return sqlite3.connect(str(DB_PATH), check_same_thread=False)
+
 
 def normalize_symptoms(symptoms: str) -> str:
-    return ",".join(
-        sorted(s.strip().lower() for s in symptoms.split(",") if s.strip())
-    )
+    return ",".join(sorted(s.strip().lower() for s in symptoms.split(",") if s.strip()))
+
+
+def _ensure_column(cursor, table: str, column: str, col_def: str):
+    cursor.execute(f"PRAGMA table_info({table})")
+    cols = {row[1] for row in cursor.fetchall()}
+    if column not in cols:
+        cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_def}")
+
 
 def init_db():
     conn = get_connection()
     cursor = conn.cursor()
 
-    # -------- medical_cases --------
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS medical_cases (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -26,22 +34,29 @@ def init_db():
             symptoms TEXT NOT NULL,
             status TEXT NOT NULL,
             predicted_disease TEXT,
+            predictions_json TEXT,
             confidence REAL,
             decision TEXT,
             created_at TEXT NOT NULL
         )
     """)
 
-    # -------- feedback --------
+    _ensure_column(cursor, "medical_cases", "predicted_disease", "TEXT")
+    _ensure_column(cursor, "medical_cases", "predictions_json", "TEXT")
+    _ensure_column(cursor, "medical_cases", "confidence", "REAL")
+    _ensure_column(cursor, "medical_cases", "decision", "TEXT")
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS feedback (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             case_id INTEGER NOT NULL,
-            prediction_id INTEGER,
+            disease TEXT NOT NULL,
             accepted INTEGER NOT NULL,
             created_at TEXT NOT NULL
         )
     """)
+
+    _ensure_column(cursor, "feedback", "disease", "TEXT")
 
     conn.commit()
     conn.close()
@@ -58,9 +73,7 @@ def insert_case(age: int, gender: str, symptoms: str):
     cursor = conn.cursor()
 
     cursor.execute("""
-        INSERT INTO medical_cases (
-            age, gender, symptoms, status, created_at
-        )
+        INSERT INTO medical_cases (age, gender, symptoms, status, created_at)
         VALUES (?, ?, ?, ?, ?)
     """, (
         age,
@@ -81,12 +94,7 @@ def fetch_next_queued_case():
     cursor = conn.cursor()
 
     cursor.execute("""
-        SELECT
-            id,
-            age,
-            gender,
-            symptoms,
-            status
+        SELECT id, age, gender, symptoms, status
         FROM medical_cases
         WHERE status = ?
         ORDER BY id
@@ -111,10 +119,13 @@ def update_case_status(
     case_id: int,
     disease: str,
     confidence: float,
-    decision: str
+    decision: str,
+    predictions=None
 ):
     conn = get_connection()
     cursor = conn.cursor()
+
+    predictions_json = json.dumps(predictions, ensure_ascii=False) if predictions is not None else None
 
     cursor.execute("""
         UPDATE medical_cases
@@ -122,13 +133,15 @@ def update_case_status(
             status = ?,
             predicted_disease = ?,
             confidence = ?,
-            decision = ?
+            decision = ?,
+            predictions_json = ?
         WHERE id = ?
     """, (
         CaseStatus.DIAGNOSED.name,
         disease,
         confidence,
         decision,
+        predictions_json,
         case_id
     ))
 
@@ -149,7 +162,8 @@ def get_case_by_id(case_id: int):
             status,
             predicted_disease,
             confidence,
-            decision
+            decision,
+            predictions_json
         FROM medical_cases
         WHERE id = ?
     """, (case_id,))
@@ -163,18 +177,16 @@ def get_case_by_id(case_id: int):
 # FEEDBACK
 # -------------------------------------------------
 
-def insert_feedback(case_id: int, prediction_id: int, accepted: bool):
+def insert_feedback(case_id: int, disease: str, accepted: bool):
     conn = get_connection()
     cursor = conn.cursor()
 
     cursor.execute("""
-        INSERT INTO feedback (
-            case_id, prediction_id, accepted, created_at
-        )
+        INSERT INTO feedback (case_id, disease, accepted, created_at)
         VALUES (?, ?, ?, ?)
     """, (
         case_id,
-        prediction_id,
+        disease,
         int(accepted),
         datetime.now(timezone.utc).isoformat()
     ))
@@ -208,12 +220,12 @@ def feedback_stats_for_symptoms(symptoms: str):
 
     cursor.execute("""
         SELECT
-            SUM(CASE WHEN accepted = 1 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN accepted = 0 THEN 1 ELSE 0 END)
+            SUM(CASE WHEN f.accepted = 1 THEN 1 ELSE 0 END),
+            SUM(CASE WHEN f.accepted = 0 THEN 1 ELSE 0 END)
         FROM feedback f
         JOIN medical_cases c ON c.id = f.case_id
         WHERE LOWER(c.symptoms) = LOWER(?)
-    """, (symptoms,))  
+    """, (symptoms,))
 
     row = cursor.fetchone()
     conn.close()
@@ -234,7 +246,7 @@ def feedback_stats_for_symptoms_and_disease(symptoms: str, disease: str):
         FROM feedback f
         JOIN medical_cases c ON c.id = f.case_id
         WHERE LOWER(c.symptoms) = LOWER(?)
-          AND LOWER(c.predicted_disease) = LOWER(?)
+          AND LOWER(f.disease) = LOWER(?)
     """, (symptoms, disease))
 
     row = cursor.fetchone()
@@ -243,5 +255,3 @@ def feedback_stats_for_symptoms_and_disease(symptoms: str, disease: str):
     accepted = row[0] or 0
     rejected = row[1] or 0
     return accepted, rejected
-
-

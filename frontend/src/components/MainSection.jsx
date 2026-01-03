@@ -6,12 +6,13 @@ function MainSection() {
   const [gender, setGender] = useState("");
   const [symptoms, setSymptoms] = useState("");
   const [loading, setLoading] = useState(false);
-
-  const [caseId, setCaseId] = useState(null);
   const [result, setResult] = useState(null);
+  const [caseId, setCaseId] = useState(null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState(null);
   const [feedbackSent, setFeedbackSent] = useState(false);
+  const [predictions, setPredictions] = useState([]);
+  const [selected, setSelected] = useState(null); // { disease, confidence, decision }
 
   // auto-hide alert
   useEffect(() => {
@@ -62,9 +63,15 @@ function MainSection() {
     try {
       const res = await fetch(`http://127.0.0.1:8000/cases/${caseId}`);
       const data = await res.json();
+      console.log("CASE RESPONSE:", data);
 
       if (data.status === "DIAGNOSED") {
-        setResult(data.prediction);
+        const list = data.other_predictions || [];
+        setPredictions(list);
+
+        if (list.length > 0) {
+          setSelected(list[0]);
+        }
       } else {
         setMessage({ type: "info", text: "Agent još obrađuje slučaj..." });
       }
@@ -74,6 +81,11 @@ function MainSection() {
   };
 
   async function sendFeedback(accepted) {
+    if (!caseId || !selected?.disease) {
+      setMessage({ type: "danger", text: "Prvo odaberi dijagnozu iz liste." });
+      return;
+    }
+
     setFeedbackSent(true);
 
     try {
@@ -82,26 +94,21 @@ function MainSection() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           case_id: caseId,
-          prediction_id: 1,
+          disease: selected.disease, // ✅ šalješ baš odabranu bolest
           accepted,
         }),
       });
 
-      setMessage(
-        accepted
-          ? {
-              type: "success",
-              text: "Slučaj je prihvaćen! Hvala što ste potvrdili.",
-            }
-          : {
-              type: "success",
-              text: "Slučaj je odbijen! Hvala što ste potvrdili.",
-            }
-      );
-      setTimeout(() => {
-        resetForm();
-      }, 3000);
+      setMessage({
+        type: "success",
+        text: accepted
+          ? `Prihvaćeno: ${selected.disease}`
+          : `Odbijeno: ${selected.disease}`,
+      });
+
+      setTimeout(() => resetForm(), 2000);
     } catch {
+      setFeedbackSent(false);
       setMessage({ type: "danger", text: "Greška pri slanju feedbacka." });
     }
   }
@@ -112,6 +119,8 @@ function MainSection() {
     setSymptoms("");
     setCaseId(null);
     setResult(null);
+    setPredictions([]);
+    setSelected(null);
     setFeedbackSent(false);
   }
 
@@ -240,61 +249,106 @@ function MainSection() {
         📊 Provjeri rezultat
       </button>
 
-      {result && (
+      {predictions.length > 0 && (
         <div className="mt-8 bg-gray-800/60 p-6 rounded-xl border border-gray-700">
           <h3 className="text-xl font-semibold text-white mb-4">
-            📊 Rezultat analize
+            🔍 Moguće dijagnoze (AI procjena)
           </h3>
 
-          <p className="text-gray-300">
-            <b>Moguća dijagnoza:</b>{" "}
-            <span className="text-white">{result.disease}</span>
-          </p>
+          <div className="space-y-3">
+            {predictions.map((p, idx) => {
+              const isSelected = selected?.disease === p.disease;
 
-          <p className="text-gray-300 mt-2">
-            <b>Confidence:</b>{" "}
-            <span className="text-white">
-              {Math.round(result.confidence * 100)}%
-            </span>
-          </p>
+              return (
+                <div
+                  key={idx}
+                  onClick={() => setSelected(p)}
+                  className={`cursor-pointer flex items-center justify-between rounded-lg p-4 border transition
+              ${
+                isSelected
+                  ? "bg-indigo-900/60 border-indigo-500"
+                  : "bg-gray-900/70 border-gray-700 hover:border-indigo-400"
+              }`}
+                >
+                  <div>
+                    <div className="text-white font-medium text-lg">
+                      {p.disease}
+                    </div>
 
-          <div className="w-full bg-gray-700 rounded-full h-3 mt-3">
-            <div
-              className="h-3 rounded-full bg-green-500"
-              style={{ width: `${result.confidence * 100}%` }}
-            />
+                    <div className="text-sm text-gray-400 mt-1">
+                      Odluka agenta:{" "}
+                      <span
+                        className={
+                          p.decision === "ACCEPT"
+                            ? "text-green-400 font-semibold"
+                            : "text-yellow-400 font-semibold"
+                        }
+                      >
+                        {p.decision}
+                      </span>
+                    </div>
+
+                    {isSelected && (
+                      <div className="text-xs text-indigo-300 mt-2">
+                        ✔ Odabrana dijagnoza
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="text-right min-w-[120px]">
+                    <div className="text-white font-semibold">
+                      {Math.round(p.confidence * 100)}%
+                    </div>
+
+                    <div className="w-full bg-gray-700 rounded-full h-2 mt-1">
+                      <div
+                        className={`h-2 rounded-full ${
+                          p.decision === "ACCEPT"
+                            ? "bg-green-500"
+                            : "bg-yellow-500"
+                        }`}
+                        style={{ width: `${p.confidence * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
-          <p className="mt-4 text-sm text-gray-400">
-            Odluka agenta:{" "}
-            <span className="font-semibold text-white">{result.decision}</span>
-          </p>
-        </div>
-      )}
+          {/* FEEDBACK ZA ODABRANU DIJAGNOZU */}
+          <div className="mt-6 bg-gray-900/70 border border-gray-700 rounded-lg p-4">
+            <p className="text-sm text-gray-300 mb-3">
+              Odabrana dijagnoza:{" "}
+              <span className="font-semibold text-white">
+                {selected ? selected.disease : "Nije odabrano"}
+              </span>
+            </p>
 
-      {result && (
-        <div className="mt-6 space-y-4">
-          <div className="flex gap-4">
-            <button
-              disabled={feedbackSent}
-              onClick={() => sendFeedback(true)}
-              className="flex-1 bg-green-600 hover:bg-green-500 text-white py-2 rounded-md font-semibold disabled:opacity-50"
-            >
-              ✅ Prihvati
-            </button>
+            <div className="flex gap-4">
+              <button
+                type="button"
+                disabled={!selected || feedbackSent}
+                onClick={() => sendFeedback(true)}
+                className="flex-1 bg-green-600 hover:bg-green-500 text-white py-2 rounded-md font-semibold disabled:opacity-50"
+              >
+                ✅ Prihvati
+              </button>
 
-            <button
-              disabled={feedbackSent}
-              onClick={() => sendFeedback(false)}
-              className="flex-1 bg-red-600 hover:bg-red-500 text-white py-2 rounded-md font-semibold disabled:opacity-50"
-            >
-              ❌ Odbaci
-            </button>
+              <button
+                type="button"
+                disabled={!selected || feedbackSent}
+                onClick={() => sendFeedback(false)}
+                className="flex-1 bg-red-600 hover:bg-red-500 text-white py-2 rounded-md font-semibold disabled:opacity-50"
+              >
+                ❌ Odbaci
+              </button>
+            </div>
+
+            <p className="text-xs text-gray-400 text-center mt-3">
+              Klikni na jednu bolest iz liste pa pošalji feedback.
+            </p>
           </div>
-
-          <p className="text-sm text-gray-400 text-center">
-            Vaša odluka pomaže agentu da uči i poboljša buduće preporuke.
-          </p>
         </div>
       )}
     </section>
